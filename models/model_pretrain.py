@@ -48,7 +48,7 @@ class ALBEF(nn.Module):
         vision_width = config['vision_width']       
         bert_config = BertConfig.from_json_file(config['bert_config'])
         
-        self.text_encoder = BertForMaskedLM.from_pretrained(text_encoder, config=bert_config)      
+        self.text_encoder = BertForMaskedLM.from_pretrained('/mnt/workspace/Project/for_test/ALBEF/bert-base-uncase', config=bert_config)      
 
         text_width = self.text_encoder.config.hidden_size
         self.vision_proj = nn.Linear(vision_width, embed_dim)
@@ -64,7 +64,7 @@ class ALBEF(nn.Module):
             img_size=config['image_res'], patch_size=16, embed_dim=768, depth=12, num_heads=12, 
             mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6)) 
         self.vision_proj_m = nn.Linear(vision_width, embed_dim)
-        self.text_encoder_m = BertForMaskedLM.from_pretrained(text_encoder, config=bert_config)       
+        self.text_encoder_m = BertForMaskedLM.from_pretrained('/mnt/workspace/Project/for_test/ALBEF/bert-base-uncase', config=bert_config)       
         self.text_proj_m = nn.Linear(text_width, embed_dim)    
         
         self.model_pairs = [[self.visual_encoder,self.visual_encoder_m],
