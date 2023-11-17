@@ -8,6 +8,7 @@
 from functools import partial
 from models.vit import VisionTransformer, interpolate_pos_embed
 from models.xbert import BertConfig, BertForMaskedLM
+from models.sohonecks import SimpleVDforPreGate
 
 import torch
 import torch.nn.functional as F
@@ -23,7 +24,8 @@ class ALBEF(nn.Module):
                  tokenizer = None,
                  config = None,    
                  temp = 0.07,
-                 init_deit = True
+                 init_deit = True,
+                 neck = True,
                  ):
         super().__init__()
         
@@ -83,21 +85,24 @@ class ALBEF(nn.Module):
         self.image_queue = nn.functional.normalize(self.image_queue, dim=0)
         self.text_queue = nn.functional.normalize(self.text_queue, dim=0)
 
-
+        if neck is not None:
+            self.neck = SimpleVDforPreGate(in_channels=768, out_channels=768, num_tokens=2048)
+        else:
+            self.neck = None
 
     def forward(self, image, text, alpha=0):
         with torch.no_grad():
             self.temp.clamp_(0.001,0.5)
         
-        image_embeds = self.visual_encoder(image) 
-        image_atts = torch.ones(image_embeds.size()[:-1],dtype=torch.long).to(image.device)
+        image_embeds = self.visual_encoder(image)   # [b,257,768]
+        image_atts = torch.ones(image_embeds.size()[:-1],dtype=torch.long).to(image.device) # [b,257] 全1
 
-        image_feat = F.normalize(self.vision_proj(image_embeds[:,0,:]),dim=-1)  
+        image_feat = F.normalize(self.vision_proj(image_embeds[:,0,:]),dim=-1)  # [b,256]
 
         text_output = self.text_encoder.bert(text.input_ids, attention_mask = text.attention_mask,                      
                                         return_dict = True, mode = 'text')            
-        text_embeds = text_output.last_hidden_state
-        text_feat = F.normalize(self.text_proj(text_embeds[:,0,:]),dim=-1)                 
+        text_embeds = text_output.last_hidden_state # [b,l,768]
+        text_feat = F.normalize(self.text_proj(text_embeds[:,0,:]),dim=-1)      # [b,256]           
              
         # get momentum features
         with torch.no_grad():
@@ -128,6 +133,12 @@ class ALBEF(nn.Module):
         loss_ita = (loss_i2t+loss_t2i)/2
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m)
+
+        ###=================================###
+        # for the vision dictionary
+        image_cls, image_embeds = image_embeds[:,0,:].unsqueeze(1), image_embeds[:,1:,:]     # [b,256,768]
+        visual_tokens, visual_attention, mask_v_labels  = self.neck(image_embeds)
+        image_embeds = torch.cat([image_cls,visual_tokens],dim=1)
 
         ###=================================###
         # forward the positve image-text pair
