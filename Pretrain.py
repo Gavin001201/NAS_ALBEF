@@ -63,11 +63,14 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
         else:
             alpha = config['alpha']*min(1,i/len(data_loader)) 
         
-        loss_mlm, loss_ita, loss_itm = model(image, text_input, alpha = alpha)  
+        loss_mlm, loss_ita, loss_itm = model(image, text_input, alpha = alpha, epoch=epoch)  
             
         loss = loss_mlm + loss_ita + loss_itm    
           
         loss.backward()
+        # for name, param in model.named_parameters():
+        #     if param.grad is None:
+        #         print(name)
         optimizer.step()    
         
         metric_logger.update(loss_mlm=loss_mlm.item())

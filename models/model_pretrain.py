@@ -90,7 +90,7 @@ class ALBEF(nn.Module):
         else:
             self.neck = None
 
-    def forward(self, image, text, alpha=0):
+    def forward(self, image, text, alpha=0, epoch=0):
         with torch.no_grad():
             self.temp.clamp_(0.001,0.5)
         
@@ -138,13 +138,15 @@ class ALBEF(nn.Module):
         # for the vision dictionary
         image_cls, image_embeds = image_embeds[:,0,:].unsqueeze(1), image_embeds[:,1:,:]     # [b,256,768]
         visual_tokens, visual_attention, mask_v_labels  = self.neck(image_embeds)
-        image_embeds = torch.cat([image_cls,visual_tokens],dim=1)
+
+        image_embeds = torch.cat([image_cls,image_embeds],dim=1)
+        image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
 
         ###=================================###
         # forward the positve image-text pair
         output_pos = self.text_encoder.bert(encoder_embeds = text_embeds, 
                                         attention_mask = text.attention_mask,
-                                        encoder_hidden_states = image_embeds,
+                                        encoder_hidden_states = image_tokens,
                                         encoder_attention_mask = image_atts,      
                                         return_dict = True,
                                         mode = 'fusion',
@@ -161,7 +163,7 @@ class ALBEF(nn.Module):
         image_embeds_neg = []    
         for b in range(bs):
             neg_idx = torch.multinomial(weights_t2i[b], 1).item()
-            image_embeds_neg.append(image_embeds[neg_idx])
+            image_embeds_neg.append(image_tokens[neg_idx])
         image_embeds_neg = torch.stack(image_embeds_neg,dim=0)   
 
         # select a negative text for each image
@@ -177,7 +179,7 @@ class ALBEF(nn.Module):
         text_embeds_all = torch.cat([text_embeds, text_embeds_neg],dim=0)     
         text_atts_all = torch.cat([text.attention_mask, text_atts_neg],dim=0)     
 
-        image_embeds_all = torch.cat([image_embeds_neg,image_embeds],dim=0)
+        image_embeds_all = torch.cat([image_embeds_neg,image_tokens],dim=0)
         image_atts_all = torch.cat([image_atts,image_atts],dim=0)
 
         output_neg = self.text_encoder.bert(encoder_embeds = text_embeds_all, 
@@ -210,16 +212,27 @@ class ALBEF(nn.Module):
                                            encoder_attention_mask = image_atts,      
                                            return_dict = True,
                                            return_logits = True,   
-                                          )    
-        mlm_output = self.text_encoder(input_ids, 
-                                       attention_mask = text.attention_mask,
-                                       encoder_hidden_states = image_embeds,
-                                       encoder_attention_mask = image_atts,      
-                                       return_dict = True,
-                                       labels = labels,   
-                                       soft_labels = F.softmax(logits_m,dim=-1),
-                                       alpha = alpha
-                                      )                           
+                                          )   
+        if epoch<10: 
+            mlm_output = self.text_encoder(input_ids, 
+                                        attention_mask = text.attention_mask,
+                                        encoder_hidden_states = image_embeds,
+                                        encoder_attention_mask = image_atts,      
+                                        return_dict = True,
+                                        labels = labels,   
+                                        soft_labels = F.softmax(logits_m,dim=-1),
+                                        alpha = alpha
+                                        )    
+        else:
+            mlm_output = self.text_encoder(input_ids, 
+                                        attention_mask = text.attention_mask,
+                                        encoder_hidden_states = image_tokens,
+                                        encoder_attention_mask = image_atts,      
+                                        return_dict = True,
+                                        labels = labels,   
+                                        soft_labels = F.softmax(logits_m,dim=-1),
+                                        alpha = alpha
+                                        )                                      
         loss_mlm = mlm_output.loss        
 
         return loss_mlm, loss_ita, loss_itm  
