@@ -250,7 +250,7 @@ def main(args, config):
                                                           is_trains=[True, False, False], 
                                                           collate_fns=[None,None,None])   
        
-    tokenizer = BertTokenizer.from_pretrained('/mnt/workspace/Project/for_test/ALBEF/bert-base-uncase')
+    tokenizer = BertTokenizer.from_pretrained(args.text_encoder)
 
     #### Model #### 
     print("Creating model")

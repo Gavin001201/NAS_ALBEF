@@ -233,7 +233,7 @@ class SimpleVDforPreGate(nn.Module):
         if self.begin_align:
             inputs_flatten=self.begin_line(inputs_flatten)
 
-        quantized_pt, indices = self.vq(inputs_flatten)
+        quantized_pt, indices, topk_values, topk_indices = self.vq(inputs_flatten)
         if self.pos_align:  # 过线性层
             quantized_pt = self.pos_line(quantized_pt)
 
@@ -255,13 +255,22 @@ class SimpleVDforPreGate(nn.Module):
         pos = self.position_encoding_sine(visual_mask[:, :, 0]).to(device=embedded_pt.device)  # 正余弦位置编码
         visual_mask = visual_mask.to(dtype=torch.float32).to(device=indices.device)
 
-        indices = indices.view(batch_size, l, 1).float()
-        indices = indices * visual_mask - 100 * (1 - visual_mask)
+        indices = indices.view(batch_size, l, -1).float()
+        indices = indices * visual_mask - 100 * (1 - visual_mask)   # 这里其实没变，这一步可以删掉
 
         tmp = np.random.randint(l)
         tmp_label = indices[:, tmp, :].view(batch_size, 1, 1)  # 每张图片随机抽取一块
         masked_indices = (indices == tmp_label).float() # 每张图片等于抽取的label的位置为1，其余为0
         masked_indices = masked_indices * visual_mask
+
+        neg_indices = torch.multinomial(topk_values, 1)
+        neg_indices = torch.gather(topk_indices, 1, neg_indices).reshape(batch_size, l, 1)
+        neg_indices = neg_indices * masked_indices + indices * (1 - masked_indices)
+        neg_indices = neg_indices.reshape(batch_size * l, -1).long()
+        encodings = torch.zeros(neg_indices.shape[0], self.vq.num_tokens, dtype=torch.float,device=neg_indices.device)
+        encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
+        neg_quantize = torch.matmul(encodings, self.vq.embed)
+        neg_quantize = neg_quantize.reshape(batch_size, l, -1)
 
         probability_matrix = torch.full(tmp_label.shape, self.mask_prob)
         masked_indices2 = torch.bernoulli(probability_matrix).to(device=img.device).float()# 以15%的概率将抽取的图像块置为1
@@ -279,7 +288,7 @@ class SimpleVDforPreGate(nn.Module):
 
         visual_mask = visual_mask.view(batch_size, -1).long()
 
-        return xq, visual_mask,labels
+        return xq, visual_mask,labels, neg_quantize
 
 
 

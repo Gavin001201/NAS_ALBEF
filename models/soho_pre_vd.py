@@ -50,7 +50,14 @@ class SOHO_Pre_VD(nn.Module):
                 encoding_indices: Tensor containing the discrete encoding indices, ie
                 which element of the quantized space each input element was mapped to.
         """
-
+        k = 4
+        topk_values, topk_indices = torch.topk(distances, k, largest=False)
+        topk_values = topk_values[:,1:]
+        topk_values = F.normalize(topk_values, dim=1)
+        # 将距离倒置当作概率分布
+        topk_values = 1.0 / (topk_values + 1e-4)
+        topk_values = F.softmax(topk_values, dim=1)
+        topk_indices = topk_indices[:,1:]
 
         encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
         encodings = torch.zeros(encoding_indices.shape[0],self.num_tokens, dtype=torch.float,device=inputs_flatten.device)
@@ -66,7 +73,7 @@ class SOHO_Pre_VD(nn.Module):
             embed_sum_tmp = torch.matmul(encodings.t(), inputs_flatten) # 选中输入数据对应码本数据再对应输入数据的值,对应同一码本的向量相加
 
             embed_sum = torch.sum(concat_all_gather(embed_sum_tmp.unsqueeze(dim=0)),dim=0)
-            ema_tensor_inplace(self.embed_avg, embed_sum, self.curr_decay)  # 对码本条目进行动量更新，这里self.embed_av保留了所有数据
+            ema_tensor_inplace(self.embed_avg, embed_sum, self.curr_decay)  # 对码本条目进行动量更新，这里self.embed_avg保留了所有数据
             # 平滑处理后，每个位置都有了值，原来为0的位置也有了较小值
             cluster_size = laplace_smoothing(self.cluster_size, self.num_tokens, self.eps) * self.cluster_size.sum()
             embed_normalized = self.embed_avg / cluster_size.unsqueeze(1)
@@ -81,7 +88,7 @@ class SOHO_Pre_VD(nn.Module):
         #quantize = inputs_flatten
         quantize = (quantize - inputs_flatten).detach() + inputs_flatten
 
-        return quantize, encoding_indices
+        return quantize, encoding_indices, topk_values, topk_indices
 
 
 @torch.no_grad()

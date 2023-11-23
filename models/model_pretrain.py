@@ -9,6 +9,8 @@ from functools import partial
 from models.vit import VisionTransformer, interpolate_pos_embed
 from models.xbert import BertConfig, BertForMaskedLM
 from models.sohonecks import SimpleVDforPreGate
+from models.sohobert import VLBertModel
+from models.soho_pre_head import MLM_MVM_ITM_head
 
 import torch
 import torch.nn.functional as F
@@ -26,6 +28,7 @@ class ALBEF(nn.Module):
                  temp = 0.07,
                  init_deit = True,
                  neck = True,
+                 vlbert_pre = 'open-mmlab://bert-base-uncased',
                  ):
         super().__init__()
         
@@ -87,8 +90,15 @@ class ALBEF(nn.Module):
 
         if neck is not None:
             self.neck = SimpleVDforPreGate(in_channels=768, out_channels=768, num_tokens=2048)
+            # self.neck.init_weights()
         else:
             self.neck = None
+        self.vlbert = VLBertModel(num_hidden_layers=3)
+        if self.vlbert and vlbert_pre is not None:
+            print('load vlbert model from: {}'.format(vlbert_pre))
+        self.vlbert.init_weights(pretrained=vlbert_pre)
+        self.mvm_head = MLM_MVM_ITM_head()
+        self.mvm_head.init_weights()
 
     def forward(self, image, text, alpha=0, epoch=0):
         with torch.no_grad():
@@ -137,10 +147,44 @@ class ALBEF(nn.Module):
         ###=================================###
         # for the vision dictionary
         image_cls, image_embeds = image_embeds[:,0,:].unsqueeze(1), image_embeds[:,1:,:]     # [b,256,768]
-        visual_tokens, visual_attention, mask_v_labels  = self.neck(image_embeds)
+        visual_tokens, visual_attention, mask_v_labels, neg_visual_tokens  = self.neck(image_embeds)
 
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
+        neg_image_tokens = torch.cat([image_cls,neg_visual_tokens],dim=1)
+
+        ###=================MVM================###
+        # 这里在 ALBEF 的 text input 的基础上加上 [sep] token，和 vlbert 的输入形式保持一致
+        language_tokens = text['input_ids'].clone()  # 创建语言tokens的副本
+        language_attention = text['attention_mask'].clone()  # 创建语言attention的副本
+        indices = torch.where(language_tokens == 0, torch.arange(language_tokens.size(1), device=language_tokens.device), language_tokens.size(1) - 1)
+        sep_indices, _ = torch.min(indices, dim=1)
+        # 将指定索引处的值设置为 102
+        sep_indices = sep_indices.unsqueeze(1)  # 转换为列向量，形状为 [64, 1]
+
+        language_tokens.scatter_(1, sep_indices, 102)
+        language_attention.scatter_(1, sep_indices, 1)
+
+        fusion_feature=self.vlbert(language_tokens,language_attention,
+                                     visual_tokens=visual_tokens,visual_attention_mask=visual_attention)
+
+        mask_v_token_pred = fusion_feature[:,language_tokens.size(1):,:].contiguous().view(-1,fusion_feature.size(2))
+        mask_v_token_norm = F.normalize(mask_v_token_pred, dim=-1)
+        emb = self.neck.vq.embed.data
+        emb_norm = F.normalize(emb)
+        mask_v_score = torch.matmul(mask_v_token_norm, emb_norm.t())# 每一个token预测的码本概率
+
+        mask_v_token_pred = mask_v_score
+
+        losses = self.mvm_head.loss(
+            mask_v_token_pred, mask_v_labels.view(-1))
+
+        if epoch<10:
+            loss_mvm = 0*losses['loss_mvm']
+            acc_mvm = 0*losses['acc_v']
+        else:
+            loss_mvm = losses['loss_mvm']
+            acc_mvm = losses['acc_v']
 
         ###=================================###
         # forward the positve image-text pair
@@ -176,11 +220,11 @@ class ALBEF(nn.Module):
         text_embeds_neg = torch.stack(text_embeds_neg,dim=0)   
         text_atts_neg = torch.stack(text_atts_neg,dim=0)      
 
-        text_embeds_all = torch.cat([text_embeds, text_embeds_neg],dim=0)     
-        text_atts_all = torch.cat([text.attention_mask, text_atts_neg],dim=0)     
+        text_embeds_all = torch.cat([text_embeds, text_embeds, text_embeds_neg],dim=0)     
+        text_atts_all = torch.cat([text.attention_mask, text.attention_mask, text_atts_neg],dim=0)     
 
-        image_embeds_all = torch.cat([image_embeds_neg,image_tokens],dim=0)
-        image_atts_all = torch.cat([image_atts,image_atts],dim=0)
+        image_embeds_all = torch.cat([neg_image_tokens,image_embeds_neg,image_tokens],dim=0)
+        image_atts_all = torch.cat([image_atts,image_atts,image_atts],dim=0)
 
         output_neg = self.text_encoder.bert(encoder_embeds = text_embeds_all, 
                                         attention_mask = text_atts_all,
@@ -193,7 +237,7 @@ class ALBEF(nn.Module):
         vl_embeddings = torch.cat([output_pos.last_hidden_state[:,0,:], output_neg.last_hidden_state[:,0,:]],dim=0)
         vl_output = self.itm_head(vl_embeddings)            
 
-        itm_labels = torch.cat([torch.ones(bs,dtype=torch.long),torch.zeros(2*bs,dtype=torch.long)],
+        itm_labels = torch.cat([torch.ones(bs,dtype=torch.long),torch.zeros(3*bs,dtype=torch.long)],
                                dim=0).to(image.device)
         loss_itm = F.cross_entropy(vl_output, itm_labels)     
         
@@ -235,7 +279,7 @@ class ALBEF(nn.Module):
                                         )                                      
         loss_mlm = mlm_output.loss        
 
-        return loss_mlm, loss_ita, loss_itm  
+        return loss_mlm, loss_ita, loss_itm, loss_mvm, acc_mvm
 
         
 
