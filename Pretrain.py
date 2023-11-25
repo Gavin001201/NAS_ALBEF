@@ -41,8 +41,8 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
     metric_logger.add_meter('loss_mlm', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
     metric_logger.add_meter('loss_ita', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
     metric_logger.add_meter('loss_itm', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
-    metric_logger.add_meter('loss_mvm', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
-    metric_logger.add_meter('acc_mvm', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
+    # metric_logger.add_meter('loss_mvm', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
+    # metric_logger.add_meter('acc_mvm', utils.SmoothedValue(window_size=50, fmt='{value:.4f}'))
     
     header = 'Train Epoch: [{}]'.format(epoch)
     print_freq = 50   
@@ -65,9 +65,9 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
         else:
             alpha = config['alpha']*min(1,i/len(data_loader)) 
         
-        loss_mlm, loss_ita, loss_itm, loss_mvm, acc_mvm = model(image, text_input, alpha = alpha, epoch=epoch)  
+        loss_mlm, loss_ita, loss_itm = model(image, text_input, alpha = alpha, epoch=epoch)  
             
-        loss = loss_mlm + loss_ita + loss_itm + loss_mvm  
+        loss = loss_mlm + loss_ita + loss_itm #+ loss_mvm  
           
         loss.backward()
         # for name, param in model.named_parameters():
@@ -78,8 +78,8 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
         metric_logger.update(loss_mlm=loss_mlm.item())
         metric_logger.update(loss_ita=loss_ita.item())
         metric_logger.update(loss_itm=loss_itm.item())
-        metric_logger.update(loss_mvm=loss_mvm.item())
-        metric_logger.update(acc_mvm=acc_mvm.item())
+        # metric_logger.update(loss_mvm=loss_mvm.item())
+        # metric_logger.update(acc_mvm=acc_mvm.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])         
         
         if epoch==0 and i%step_size==0 and i<=warmup_iterations: 
