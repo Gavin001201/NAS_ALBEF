@@ -142,12 +142,26 @@ class ALBEF(nn.Module):
 
         loss_ita = (loss_i2t+loss_t2i)/2
 
-        self._dequeue_and_enqueue(image_feat_m, text_feat_m)
+        # self._dequeue_and_enqueue(image_feat_m, text_feat_m)
 
         ###=================================###
         # for the vision dictionary
         image_cls, image_embeds = image_embeds[:,0,:].unsqueeze(1), image_embeds[:,1:,:]     # [b,256,768]
-        visual_tokens, visual_attention, mask_v_labels, neg_visual_tokens  = self.neck(image_embeds)
+        text_cls = text_embeds[:,0,:].unsqueeze(1)
+        # 计算每对匹配的图像文本序列中的patch-[cls]token相似度
+        text_similarity_matrix = torch.matmul(image_embeds, text_cls.transpose(1, 2)).squeeze(2)
+        image_similarity_matrix = torch.matmul(image_embeds, image_cls.transpose(1, 2)).squeeze(2)
+        # text_max_similarity_values, text_max_similarity_indices = torch.max(text_similarity_matrix, dim=1)
+        # image_max_similarity_values, image_max_similarity_indices = torch.max(image_similarity_matrix, dim=1)
+        # 获取每张图片的top3相似度值和索引
+        # text_top3_values, text_top3_indices = torch.topk(text_similarity_matrix, k=3, dim=1, largest=True)
+        # image_top3_values, image_top3_indices = torch.topk(image_similarity_matrix, k=3, dim=1, largest=True)
+        similarity_matrix = F.normalize(image_similarity_matrix, dim=-1)+F.normalize(text_similarity_matrix, dim=-1)
+        topk_values, topk_indices = torch.topk(similarity_matrix, k=3, dim=1, largest=True)
+        topk_values = F.softmax(topk_values, dim=1)
+        tmp_indices = torch.multinomial(topk_values, 1)
+        mask_indices = torch.gather(topk_indices, 1, tmp_indices)
+        visual_tokens, visual_attention, mask_v_labels, neg_visual_tokens  = self.neck(image_embeds, mask_indices)
 
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征

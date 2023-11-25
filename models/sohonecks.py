@@ -219,7 +219,7 @@ class SimpleVDforPreGate(nn.Module):
         pos = pos.reshape(pos.shape[0], -1, pos.shape[3])
         return pos
 
-    def forward(self, img, img_meta=None):
+    def forward(self, img, mask_indices, img_meta=None):
         # img = img[-1]
         # x = F.max_pool2d(img, 2, stride=2)
         xq = self.linear(img)
@@ -257,15 +257,18 @@ class SimpleVDforPreGate(nn.Module):
 
         indices = indices.view(batch_size, l, -1).float()
         indices = indices * visual_mask - 100 * (1 - visual_mask)   # 这里其实没变，这一步可以删掉
-
+        # for mvm
         tmp = np.random.randint(l)
         tmp_label = indices[:, tmp, :].view(batch_size, 1, 1)  # 每张图片随机抽取一块
         masked_indices = (indices == tmp_label).float() # 每张图片等于抽取的label的位置为1，其余为0
         masked_indices = masked_indices * visual_mask
-
+        # for itm
+        masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)
+        masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2)
         neg_indices = torch.multinomial(topk_values, 1)
         neg_indices = torch.gather(topk_indices, 1, neg_indices).reshape(batch_size, l, 1)
-        neg_indices = neg_indices * masked_indices + indices * (1 - masked_indices)
+        neg_indices = torch.gather(neg_indices.squeeze(2), 1, mask_indices).unsqueeze(2)
+        neg_indices = neg_indices * masked_neg_indices + indices * (1 - masked_neg_indices)
         neg_indices = neg_indices.reshape(batch_size * l, -1).long()
         encodings = torch.zeros(neg_indices.shape[0], self.vq.num_tokens, dtype=torch.float,device=neg_indices.device)
         encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
