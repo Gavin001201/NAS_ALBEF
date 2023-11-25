@@ -263,11 +263,11 @@ class SimpleVDforPreGate(nn.Module):
         masked_indices = (indices == tmp_label).float() # 每张图片等于抽取的label的位置为1，其余为0
         masked_indices = masked_indices * visual_mask
         # for itm
-        masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)
-        masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2)
-        neg_indices = torch.multinomial(topk_values, 1)
-        neg_indices = torch.gather(topk_indices, 1, neg_indices).reshape(batch_size, l, 1)
-        neg_indices = torch.gather(neg_indices.squeeze(2), 1, mask_indices).unsqueeze(2)
+        masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)   # 获取相似度最大图像patch即掩码位置对应的量化后索引
+        masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2) # 获取掩码矩阵
+        neg_indices = torch.multinomial(topk_values, 1) # 全局候选indices的索引
+        neg_indices = torch.gather(topk_indices, 1, neg_indices).reshape(batch_size, l, 1)  # 全局候选indices
+        neg_indices = torch.gather(neg_indices.squeeze(2), 1, mask_indices).unsqueeze(2)    # 目标候选indices
         neg_indices = neg_indices * masked_neg_indices + indices * (1 - masked_neg_indices)
         neg_indices = neg_indices.reshape(batch_size * l, -1).long()
         encodings = torch.zeros(neg_indices.shape[0], self.vq.num_tokens, dtype=torch.float,device=neg_indices.device)
