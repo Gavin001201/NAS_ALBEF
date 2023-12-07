@@ -120,7 +120,7 @@ def main(args, config):
 
     data_loader = create_loader(datasets,samplers,batch_size=[config['batch_size']], num_workers=[4], is_trains=[True], collate_fns=[None])[0]
 
-    tokenizer = BertTokenizer.from_pretrained('/mnt/workspace/Project/for_test/ALBEF/bert-base-uncase')
+    tokenizer = BertTokenizer.from_pretrained('/mnt/workspace/Project/Project/for_test/ALBEF/bert-base-uncase')
 
     #### Model #### 
     print("Creating model")

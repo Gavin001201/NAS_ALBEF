@@ -1,12 +1,13 @@
-train_file: ['/mnt/workspace/Project/ALBEF/data/json_pretrain/coco.json',
-              #  'data/vg.json',
+train_file: [
+              '/mnt/workspace/Project/Project/ALBEF/data/json_pretrain/coco2.json',
+               '/mnt/workspace/Project/Project/ALBEF/data/json_pretrain/vg2.json',
               #  'data/cc12m.json',
-              #  'data/cc3m_train.json',
-              #  'data/cc3m_val.json',
+               '/mnt/workspace/Project/Project/ALBEF/data/json_pretrain/cc3m_train2.json',
+               '/mnt/workspace/Project/Project/ALBEF/data/json_pretrain/cc3m_val2.json',
               #  'data/sbu.json'               
                ]
 # each train_file (json) contains a python list where each item is {'image': img_path, 'caption': text or list_of_text }               
-bert_config: '/mnt/workspace/Project/ALBEF/configs/config_bert.json'
+bert_config: '/mnt/workspace/Project/Project/ALBEF/configs/config_bert.json'
 
 image_res: 256
 vision_width: 768

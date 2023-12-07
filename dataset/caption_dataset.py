@@ -103,9 +103,7 @@ class pretrain_dataset(Dataset):
         else:
             caption = pre_caption(ann['caption'], self.max_words)
       
-        image_path = ann['image']
-        new_image_path = '/mnt/workspace/Project/vision-language-models-are-bows/coco' + '/' + image_path.split('/')[-2] + '/' + image_path.split('/')[-1]
-        image = Image.open(new_image_path).convert('RGB')   
+        image = Image.open(ann['image']).convert('RGB')   
         image = self.transform(image)
                 
         return image, caption
