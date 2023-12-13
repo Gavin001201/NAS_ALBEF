@@ -142,7 +142,7 @@ class ALBEF(nn.Module):
 
         loss_ita = (loss_i2t+loss_t2i)/2
 
-        self._dequeue_and_enqueue(image_feat_m, text_feat_m)
+        # self._dequeue_and_enqueue(image_feat_m, text_feat_m)
 
         ###=================================###
         # for the vision dictionary
@@ -159,9 +159,9 @@ class ALBEF(nn.Module):
         similarity_matrix = F.normalize(image_similarity_matrix, dim=-1)+F.normalize(text_similarity_matrix, dim=-1)
         topk_values, topk_indices = torch.topk(similarity_matrix, k=3, dim=1, largest=True)
         topk_values = F.softmax(topk_values, dim=1)
-        tmp_indices = torch.multinomial(topk_values, 1)
-        mask_indices = torch.gather(topk_indices, 1, tmp_indices)
-        visual_tokens, visual_attention, mask_v_labels, neg_visual_tokens  = self.neck(image_embeds, mask_indices)
+        tmp_indices = torch.multinomial(topk_values, 1) # 依概率从候选 topk_indices 进行选择的索引
+        mask_indices = torch.gather(topk_indices, 1, tmp_indices)   # 待替换 patch 的索引
+        visual_tokens, neg_visual_tokens  = self.neck(image_embeds, mask_indices)
 
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征

@@ -160,11 +160,11 @@ class SimpleVDforPreGate(nn.Module):
                     nn.LayerNorm(out_channels),
                     nn.ReLU())
         self.ln = nn.LayerNorm(out_channels)
-        self.mask_emb = nn.Embedding(1, out_channels)
+        # self.mask_emb = nn.Embedding(1, out_channels)
         self.vq = SOHO_Pre_VD(num_tokens, out_channels, decay=decay,max_decay=max_decay)
         self.num_tokens = num_tokens
         self.out_channels = out_channels
-        self.mask_prob = mask_prob
+        # self.mask_prob = mask_prob
         self.total_num=0
         self.pos_align = pos_align
         self.begin_align = begin_align
@@ -246,7 +246,6 @@ class SimpleVDforPreGate(nn.Module):
         emb_score = tmp_score[:,:,0].unsqueeze(dim=2)         # 对应量化结果的得分
         img_score = tmp_score[:,:,1].unsqueeze(dim=2)         # 对应未量化结果的得分，前面拼接这里解开
 
-
         embedded_pt = embedded_pt*emb_score+xq_img*img_score    # 量化结果实际是量化前后结果的加权
 
         # visual_mask = self.get_vis_mask(batch_size, img.device).float()
@@ -258,10 +257,10 @@ class SimpleVDforPreGate(nn.Module):
         indices = indices.view(batch_size, l, -1).float()
         indices = indices * visual_mask - 100 * (1 - visual_mask)   # 这里其实没变，这一步可以删掉
         # for mvm
-        tmp = np.random.randint(l)
-        tmp_label = indices[:, tmp, :].view(batch_size, 1, 1)  # 每张图片随机抽取一块
-        masked_indices = (indices == tmp_label).float() # 每张图片等于抽取的label的位置为1，其余为0
-        masked_indices = masked_indices * visual_mask
+        # tmp = np.random.randint(l)
+        # tmp_label = indices[:, tmp, :].view(batch_size, 1, 1)  # 每张图片随机抽取一块
+        # masked_indices = (indices == tmp_label).float() # 每张图片等于抽取的label的位置为1，其余为0
+        # masked_indices = masked_indices * visual_mask
         # for itm
         masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)   # 获取相似度最大图像patch即掩码位置对应的量化后索引
         masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2) # 获取掩码矩阵
@@ -274,24 +273,27 @@ class SimpleVDforPreGate(nn.Module):
         encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
         neg_quantize = torch.matmul(encodings, self.vq.embed)
         neg_quantize = neg_quantize.reshape(batch_size, l, -1)
+        neg_quantize = neg_quantize*emb_score+xq_img*img_score    # 量化结果实际是量化前后结果的加权
 
-        probability_matrix = torch.full(tmp_label.shape, self.mask_prob)
-        masked_indices2 = torch.bernoulli(probability_matrix).to(device=img.device).float()# 以15%的概率将抽取的图像块置为1
-        masked_indices = masked_indices * masked_indices2   # 每张图片有15%的概率被掩码
+        # probability_matrix = torch.full(tmp_label.shape, self.mask_prob)
+        # masked_indices2 = torch.bernoulli(probability_matrix).to(device=img.device).float()# 以15%的概率将抽取的图像块置为1
+        # masked_indices = masked_indices * masked_indices2   # 每张图片有15%的概率被掩码
 
         # mask_emb = torch.zeros_like(embedded_pt).to(device=xq.device).float()
-        mask_emb = self.mask_emb.weight.view(1, 1, self.out_channels)
-        embedded_pt = embedded_pt * (1 - masked_indices) + mask_emb * masked_indices    # 掩码的位置填充为mask_emb
+        # mask_emb = self.mask_emb.weight.view(1, 1, self.out_channels)
+        # embedded_pt = embedded_pt * (1 - masked_indices) + mask_emb * masked_indices    # 掩码的位置填充为mask_emb
         embedded_pt += pos
+        neg_quantize += pos
 
         xq = self.ln(embedded_pt).contiguous()   # layernorm
+        neg_quantize = self.ln(neg_quantize).contiguous()
 
-        labels = indices * masked_indices - 100 * (1 - masked_indices)  # 掩码部分标签为码本元素的索引，否则为-100
-        labels = labels.long().view(batch_size, -1)
+        # labels = indices * masked_indices - 100 * (1 - masked_indices)  # 掩码部分标签为码本元素的索引，否则为-100
+        # labels = labels.long().view(batch_size, -1)
 
-        visual_mask = visual_mask.view(batch_size, -1).long()
+        # visual_mask = visual_mask.view(batch_size, -1).long()
 
-        return xq, visual_mask,labels, neg_quantize
+        return xq, neg_quantize
 
 
 
