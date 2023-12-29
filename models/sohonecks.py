@@ -160,11 +160,9 @@ class SimpleVDforPreGate(nn.Module):
                     nn.LayerNorm(out_channels),
                     nn.ReLU())
         self.ln = nn.LayerNorm(out_channels)
-        # self.mask_emb = nn.Embedding(1, out_channels)
         self.vq = SOHO_Pre_VD(num_tokens, out_channels, decay=decay,max_decay=max_decay)
         self.num_tokens = num_tokens
         self.out_channels = out_channels
-        # self.mask_prob = mask_prob
         self.total_num=0
         self.pos_align = pos_align
         self.begin_align = begin_align
@@ -179,10 +177,26 @@ class SimpleVDforPreGate(nn.Module):
         if pos_align:
             self.pos_line = nn.Linear(out_channels,out_channels)
 
+        self.init_weights()
+        
+    # def init_weights(self):
+    #     for m in self.modules():
+    #         if isinstance(m, nn.Conv2d):
+    #             kaiming_init(m, )
+
     def init_weights(self):
+        # 自定义初始化方法
         for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                kaiming_init(m, )
+            if isinstance(m, nn.Linear):
+                # 为线性层应用Xavier初始化
+                torch.nn.init.xavier_normal_(m.weight)
+                # 如果存在bias，则将其设置为0
+                if m.bias is not None:
+                    torch.nn.init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.LayerNorm):
+                # 对于层归一化，通常权重初始化为1，偏置初始化为0
+                torch.nn.init.constant_(m.weight, 1.0)
+                torch.nn.init.constant_(m.bias, 0.0)
 
     def get_vis_mask(self, b, device, img_meta):
         h = max([meta['pad_shape'][0] for meta in img_meta])
@@ -220,10 +234,9 @@ class SimpleVDforPreGate(nn.Module):
         return pos
 
     def forward(self, img, mask_indices, img_meta=None):
-        # img = img[-1]
-        # x = F.max_pool2d(img, 2, stride=2)
         xq = self.linear(img)
         xq_img = xq
+        xq_img2 = xq.clone().detach()
 
         batch_size, l, d = xq.size()
         b=batch_size
@@ -240,7 +253,7 @@ class SimpleVDforPreGate(nn.Module):
         embedded_pt = quantized_pt.view(b, l, quantized_pt.size(-1))
 
         tmp_feature = torch.cat([embedded_pt,xq_img],dim=2)     # 量化前后的数据在通道方向拼接在一起
-        # print("tmp_feature.size()={}".format(tmp_feature.size()))
+
         tmp_s = self.gate_fc(tmp_feature)   # 通道数降为2，卷积
         tmp_score = F.softmax(tmp_s,dim=2)
         emb_score = tmp_score[:,:,0].unsqueeze(dim=2)         # 对应量化结果的得分
@@ -256,11 +269,7 @@ class SimpleVDforPreGate(nn.Module):
 
         indices = indices.view(batch_size, l, -1).float()
         indices = indices * visual_mask - 100 * (1 - visual_mask)   # 这里其实没变，这一步可以删掉
-        # for mvm
-        # tmp = np.random.randint(l)
-        # tmp_label = indices[:, tmp, :].view(batch_size, 1, 1)  # 每张图片随机抽取一块
-        # masked_indices = (indices == tmp_label).float() # 每张图片等于抽取的label的位置为1，其余为0
-        # masked_indices = masked_indices * visual_mask
+
         # for itm
         masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)   # 获取相似度最大图像patch即掩码位置对应的量化后索引
         masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2) # 获取掩码矩阵
@@ -273,23 +282,13 @@ class SimpleVDforPreGate(nn.Module):
         encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
         neg_quantize = torch.matmul(encodings, self.vq.embed)
         neg_quantize = neg_quantize.reshape(batch_size, l, -1)
-        neg_quantize = neg_quantize*emb_score+xq_img*img_score    # 量化结果实际是量化前后结果的加权
+        neg_quantize = neg_quantize*emb_score+xq_img2*img_score    # 量化结果实际是量化前后结果的加权
 
-        # probability_matrix = torch.full(tmp_label.shape, self.mask_prob)
-        # masked_indices2 = torch.bernoulli(probability_matrix).to(device=img.device).float()# 以15%的概率将抽取的图像块置为1
-        # masked_indices = masked_indices * masked_indices2   # 每张图片有15%的概率被掩码
-
-        # mask_emb = torch.zeros_like(embedded_pt).to(device=xq.device).float()
-        # mask_emb = self.mask_emb.weight.view(1, 1, self.out_channels)
-        # embedded_pt = embedded_pt * (1 - masked_indices) + mask_emb * masked_indices    # 掩码的位置填充为mask_emb
         embedded_pt += pos
         neg_quantize += pos
 
         xq = self.ln(embedded_pt).contiguous()   # layernorm
         neg_quantize = self.ln(neg_quantize).contiguous()
-
-        # labels = indices * masked_indices - 100 * (1 - masked_indices)  # 掩码部分标签为码本元素的索引，否则为-100
-        # labels = labels.long().view(batch_size, -1)
 
         # visual_mask = visual_mask.view(batch_size, -1).long()
 

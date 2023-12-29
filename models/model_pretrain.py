@@ -27,8 +27,7 @@ class ALBEF(nn.Module):
                  config = None,    
                  temp = 0.07,
                  init_deit = True,
-                 neck = True,
-                 vlbert_pre = 'open-mmlab://bert-base-uncased',
+                 neck = True
                  ):
         super().__init__()
         
@@ -90,15 +89,8 @@ class ALBEF(nn.Module):
 
         if neck is not None:
             self.neck = SimpleVDforPreGate(in_channels=768, out_channels=768, num_tokens=2048)
-            # self.neck.init_weights()
         else:
             self.neck = None
-        # self.vlbert = VLBertModel(num_hidden_layers=3)
-        # if self.vlbert and vlbert_pre is not None:
-        #     print('load vlbert model from: {}'.format(vlbert_pre))
-        # self.vlbert.init_weights(pretrained=vlbert_pre)
-        # self.mvm_head = MLM_MVM_ITM_head()
-        # self.mvm_head.init_weights()
 
     def forward(self, image, text, alpha=0, epoch=0):
         with torch.no_grad():
@@ -151,11 +143,7 @@ class ALBEF(nn.Module):
         # 计算每对匹配的图像文本序列中的patch-[cls]token相似度
         text_similarity_matrix = torch.matmul(image_embeds, text_cls.transpose(1, 2)).squeeze(2)
         image_similarity_matrix = torch.matmul(image_embeds, image_cls.transpose(1, 2)).squeeze(2)
-        # text_max_similarity_values, text_max_similarity_indices = torch.max(text_similarity_matrix, dim=1)
-        # image_max_similarity_values, image_max_similarity_indices = torch.max(image_similarity_matrix, dim=1)
-        # 获取每张图片的top3相似度值和索引
-        # text_top3_values, text_top3_indices = torch.topk(text_similarity_matrix, k=3, dim=1, largest=True)
-        # image_top3_values, image_top3_indices = torch.topk(image_similarity_matrix, k=3, dim=1, largest=True)
+
         similarity_matrix = F.normalize(image_similarity_matrix, dim=-1)+F.normalize(text_similarity_matrix, dim=-1)
         topk_values, topk_indices = torch.topk(similarity_matrix, k=3, dim=1, largest=True)
         topk_values = F.softmax(topk_values, dim=1)
@@ -166,39 +154,6 @@ class ALBEF(nn.Module):
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
         neg_image_tokens = torch.cat([image_cls,neg_visual_tokens],dim=1)
-
-        ###=================MVM================###
-        # # 这里在 ALBEF 的 text input 的基础上加上 [sep] token，和 vlbert 的输入形式保持一致
-        # language_tokens = text['input_ids'].clone()  # 创建语言tokens的副本
-        # language_attention = text['attention_mask'].clone()  # 创建语言attention的副本
-        # indices = torch.where(language_tokens == 0, torch.arange(language_tokens.size(1), device=language_tokens.device), language_tokens.size(1) - 1)
-        # sep_indices, _ = torch.min(indices, dim=1)
-        # # 将指定索引处的值设置为 102
-        # sep_indices = sep_indices.unsqueeze(1)  # 转换为列向量，形状为 [64, 1]
-
-        # language_tokens.scatter_(1, sep_indices, 102)
-        # language_attention.scatter_(1, sep_indices, 1)
-
-        # fusion_feature=self.vlbert(language_tokens,language_attention,
-        #                              visual_tokens=visual_tokens,visual_attention_mask=visual_attention)
-
-        # mask_v_token_pred = fusion_feature[:,language_tokens.size(1):,:].contiguous().view(-1,fusion_feature.size(2))
-        # mask_v_token_norm = F.normalize(mask_v_token_pred, dim=-1)
-        # emb = self.neck.vq.embed.data
-        # emb_norm = F.normalize(emb)
-        # mask_v_score = torch.matmul(mask_v_token_norm, emb_norm.t())# 每一个token预测的码本概率
-
-        # mask_v_token_pred = mask_v_score
-
-        # losses = self.mvm_head.loss(
-        #     mask_v_token_pred, mask_v_labels.view(-1))
-
-        # if epoch<10:
-        #     loss_mvm = 0*losses['loss_mvm']
-        #     acc_mvm = 0*losses['acc_v']
-        # else:
-        #     loss_mvm = losses['loss_mvm']
-        #     acc_mvm = losses['acc_v']
 
         ###=================================###
         # forward the positve image-text pair
