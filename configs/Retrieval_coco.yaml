@@ -1,13 +1,13 @@
-train_file:  ['/mnt/workspace/Project/for_test/ALBEF/data/coco_test.json']
-val_file: '/mnt/workspace/Project/for_test/ALBEF/data/coco_test.json'                
-test_file: '/mnt/workspace/Project/for_test/ALBEF/data/coco_test.json'
-image_root: '/mnt/workspace/Project/vision-language-models-are-bows/coco/'
+train_file:  ['/mnt/workspace/Project/Project/ALBEF/data/downstream_data/coco_train.json']
+val_file: '/mnt/workspace/Project/Project/ALBEF/data/downstream_data/coco_val.json'                
+test_file: '/mnt/workspace/Project/Project/ALBEF/data/downstream_data/coco_test.json'
+image_root: '/mnt/workspace/Project/Project/ALBEF/data/coco'
 
-bert_config: 'configs/config_bert.json'
+bert_config: '/mnt/workspace/Project/Project/ALBEF/configs/config_bert.json'
 
 image_res: 384
 batch_size_train: 1
-batch_size_test: 1
+batch_size_test: 32
 
 queue_size: 65536
 momentum: 0.995

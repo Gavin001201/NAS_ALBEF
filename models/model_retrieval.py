@@ -1,6 +1,7 @@
 from functools import partial
 from models.vit import VisionTransformer
 from models.xbert import BertConfig, BertModel
+from models.sohonecks import SimpleVDforPreGate
 
 import torch
 from torch import nn
@@ -10,7 +11,8 @@ class ALBEF(nn.Module):
     def __init__(self,                 
                  text_encoder = None,
                  tokenizer = None,
-                 config = None,     
+                 config = None,   
+                 neck = True 
                  ):
         super().__init__()
         
@@ -23,7 +25,7 @@ class ALBEF(nn.Module):
             mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))    
 
         bert_config = BertConfig.from_json_file(config['bert_config'])
-        self.text_encoder = BertModel.from_pretrained('/mnt/workspace/Project/for_test/ALBEF/bert-base-uncase', config=bert_config, add_pooling_layer=False)      
+        self.text_encoder = BertModel.from_pretrained('/mnt/workspace/Project/Project/for_test/ALBEF/bert-base-uncase', config=bert_config, add_pooling_layer=False)      
 
         text_width = self.text_encoder.config.hidden_size
         self.vision_proj = nn.Linear(vision_width, embed_dim)
@@ -39,7 +41,7 @@ class ALBEF(nn.Module):
             img_size=config['image_res'], patch_size=16, embed_dim=768, depth=12, num_heads=12, 
             mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6)) 
         self.vision_proj_m = nn.Linear(vision_width, embed_dim)
-        self.text_encoder_m = BertModel.from_pretrained('/mnt/workspace/Project/for_test/ALBEF/bert-base-uncase', config=bert_config, add_pooling_layer=False)           
+        self.text_encoder_m = BertModel.from_pretrained('/mnt/workspace/Project/Project/for_test/ALBEF/bert-base-uncase', config=bert_config, add_pooling_layer=False)           
         self.text_proj_m = nn.Linear(text_width, embed_dim)   
 
         self.model_pairs = [[self.visual_encoder,self.visual_encoder_m],
@@ -57,7 +59,11 @@ class ALBEF(nn.Module):
 
         self.image_queue = nn.functional.normalize(self.image_queue, dim=0)
         self.text_queue = nn.functional.normalize(self.text_queue, dim=0)
-        
+
+        if neck is not None:
+            self.neck = SimpleVDforPreGate(in_channels=768, out_channels=768, num_tokens=2048)
+        else:
+            self.neck = None
 
     def forward(self, image, text, alpha, idx):
         

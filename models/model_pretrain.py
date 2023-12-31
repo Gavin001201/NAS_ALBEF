@@ -92,7 +92,7 @@ class ALBEF(nn.Module):
         else:
             self.neck = None
 
-    def forward(self, image, text, alpha=0, epoch=0):
+    def forward(self, image, text, alpha=0, epoch=0, num_training_steps=0):
         with torch.no_grad():
             self.temp.clamp_(0.001,0.5)
         
@@ -149,7 +149,8 @@ class ALBEF(nn.Module):
         topk_values = F.softmax(topk_values, dim=1)
         tmp_indices = torch.multinomial(topk_values, 1) # 依概率从候选 topk_indices 进行选择的索引
         mask_indices = torch.gather(topk_indices, 1, tmp_indices)   # 待替换 patch 的索引
-        visual_tokens, neg_visual_tokens  = self.neck(image_embeds, mask_indices)
+
+        visual_tokens, neg_visual_tokens  = self.neck(image_embeds, mask_indices, num_update=num_training_steps)
 
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
@@ -189,11 +190,15 @@ class ALBEF(nn.Module):
         text_embeds_neg = torch.stack(text_embeds_neg,dim=0)   
         text_atts_neg = torch.stack(text_atts_neg,dim=0)      
 
-        text_embeds_all = torch.cat([text_embeds, text_embeds, text_embeds_neg],dim=0)     
-        text_atts_all = torch.cat([text.attention_mask, text.attention_mask, text_atts_neg],dim=0)     
+        # text_embeds_all = torch.cat([text_embeds, text_embeds, text_embeds_neg],dim=0)     
+        # text_atts_all = torch.cat([text.attention_mask, text.attention_mask, text_atts_neg],dim=0)     
+        text_embeds_all = torch.cat([text_embeds, text_embeds_neg],dim=0)     
+        text_atts_all = torch.cat([text.attention_mask, text_atts_neg],dim=0)  
 
-        image_embeds_all = torch.cat([neg_image_tokens,image_embeds_neg,image_tokens],dim=0)
-        image_atts_all = torch.cat([image_atts,image_atts,image_atts],dim=0)
+        # image_embeds_all = torch.cat([neg_image_tokens,image_embeds_neg,image_tokens],dim=0)
+        # image_atts_all = torch.cat([image_atts,image_atts,image_atts],dim=0)
+        image_embeds_all = torch.cat([image_embeds_neg,image_tokens],dim=0)
+        image_atts_all = torch.cat([image_atts,image_atts],dim=0)
 
         output_neg = self.text_encoder.bert(encoder_embeds = text_embeds_all, 
                                         attention_mask = text_atts_all,
@@ -206,7 +211,7 @@ class ALBEF(nn.Module):
         vl_embeddings = torch.cat([output_pos.last_hidden_state[:,0,:], output_neg.last_hidden_state[:,0,:]],dim=0)
         vl_output = self.itm_head(vl_embeddings)            
 
-        itm_labels = torch.cat([torch.ones(bs,dtype=torch.long),torch.zeros(3*bs,dtype=torch.long)],
+        itm_labels = torch.cat([torch.ones(bs,dtype=torch.long),torch.zeros(2*bs,dtype=torch.long)],
                                dim=0).to(image.device)
         loss_itm = F.cross_entropy(vl_output, itm_labels)     
         

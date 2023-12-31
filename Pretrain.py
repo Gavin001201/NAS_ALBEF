@@ -32,7 +32,7 @@ from scheduler import create_scheduler
 from optim import create_optimizer
 
 
-def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device, scheduler, config):
+def train(model, data_loader, optimizer, tokenizer, epoch, num_training_steps, warmup_steps, device, scheduler, config):
     # train
     model.train()  
     
@@ -65,7 +65,7 @@ def train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device,
         else:
             alpha = config['alpha']*min(1,i/len(data_loader)) 
         
-        loss_mlm, loss_ita, loss_itm = model(image, text_input, alpha = alpha, epoch=epoch)  
+        loss_mlm, loss_ita, loss_itm = model(image, text_input, alpha = alpha, epoch=epoch, num_training_steps=num_training_steps)  
             
         loss = loss_mlm + loss_ita + loss_itm #+ loss_mvm  
           
@@ -156,13 +156,14 @@ def main(args, config):
     
     print("Start training")
     start_time = time.time()
+    num_training_steps = len(data_loader) * max_epoch
 
     for epoch in range(start_epoch, max_epoch):
         
         if epoch>0:
             lr_scheduler.step(epoch+warmup_steps)  
             
-        train_stats = train(model, data_loader, optimizer, tokenizer, epoch, warmup_steps, device, lr_scheduler, config) 
+        train_stats = train(model, data_loader, optimizer, tokenizer, epoch, num_training_steps, warmup_steps, device, lr_scheduler, config) 
         if utils.is_main_process():  
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          'epoch': epoch,

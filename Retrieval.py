@@ -112,6 +112,22 @@ def evaluation(model, data_loader, tokenizer, device, config):
     image_feats = torch.cat(image_feats,dim=0)
     image_embeds = torch.cat(image_embeds,dim=0)
     
+    image_tokens = []
+    # 定义每次处理的数据量
+    chunk_size = 50
+
+    # 使用循环遍历整个数据列表
+    for i in range(0, len(image_feats), chunk_size):
+        # 获取当前块的数据
+        chunk = image_feats[i:i + chunk_size]
+        # 对当前块的数据进行处理
+        image_cls, image_features = chunk[:,0,:].unsqueeze(1), chunk[:,1:,:]     # [b,256,768]
+
+        visual_tokens, visual_attention = model.neck(image_features)
+        image_features = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
+
+        image_feats[i:i+50] = image_features
+
     sims_matrix = image_embeds @ text_embeds.t()
     score_matrix_i2t = torch.full((len(data_loader.dataset.image),len(texts)),-100.0).to(device)
     
@@ -250,11 +266,11 @@ def main(args, config):
                                                           is_trains=[True, False, False], 
                                                           collate_fns=[None,None,None])   
        
-    tokenizer = BertTokenizer.from_pretrained(args.text_encoder)
+    tokenizer = BertTokenizer.from_pretrained('/mnt/workspace/Project/Project/for_test/ALBEF/bert-base-uncase')
 
     #### Model #### 
     print("Creating model")
-    model = ALBEF(config=config, text_encoder=args.text_encoder, tokenizer=tokenizer)
+    model = ALBEF(config=config, text_encoder='/mnt/workspace/Project/Project/for_test/ALBEF/bert-base-uncase', tokenizer=tokenizer)
     
     if args.checkpoint:    
         checkpoint = torch.load(args.checkpoint, map_location='cpu') 
@@ -302,26 +318,28 @@ def main(args, config):
                 train_loader.sampler.set_epoch(epoch)
             train_stats = train(model, train_loader, optimizer, tokenizer, epoch, warmup_steps, device, lr_scheduler, config)  
             
-        score_val_i2t, score_val_t2i, = evaluation(model_without_ddp, val_loader, tokenizer, device, config)
+        # score_val_i2t, score_val_t2i, = evaluation(model_without_ddp, val_loader, tokenizer, device, config)
         score_test_i2t, score_test_t2i = evaluation(model_without_ddp, test_loader, tokenizer, device, config)
     
         if utils.is_main_process():  
       
-            val_result = itm_eval(score_val_i2t, score_val_t2i, val_loader.dataset.txt2img, val_loader.dataset.img2txt)  
-            print(val_result)
+            # val_result = itm_eval(score_val_i2t, score_val_t2i, val_loader.dataset.txt2img, val_loader.dataset.img2txt)  
+            # print(val_result)
             test_result = itm_eval(score_test_i2t, score_test_t2i, test_loader.dataset.txt2img, test_loader.dataset.img2txt)    
             print(test_result)
             
             if args.evaluate:                
-                log_stats = {**{f'val_{k}': v for k, v in val_result.items()},
+                log_stats = {
+                            #  **{f'val_{k}': v for k, v in val_result.items()},
                              **{f'test_{k}': v for k, v in test_result.items()},                  
                              'epoch': epoch,
                             }
                 with open(os.path.join(args.output_dir, "log.txt"),"a") as f:
                     f.write(json.dumps(log_stats) + "\n")     
             else:
-                log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-                             **{f'val_{k}': v for k, v in val_result.items()},
+                log_stats = {
+                            #  **{f'train_{k}': v for k, v in train_stats.items()},
+                            #  **{f'val_{k}': v for k, v in val_result.items()},
                              **{f'test_{k}': v for k, v in test_result.items()},                  
                              'epoch': epoch,
                             }

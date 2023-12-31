@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +21,7 @@ def laplace_smoothing_dim(x, n_categories,dim=1, eps=1e-5):
     return (x + eps) / (x.sum(dim=dim,keepdim=True) + n_categories * eps)
 
 class SOHO_Pre_VD(nn.Module):
-    def __init__(self,num_tokens,token_dim,decay=0.1,max_decay=0.99,eps=1e-5):
+    def __init__(self,num_tokens,token_dim,decay=0.1,max_decay=1.0,eps=1e-5):
         super(SOHO_Pre_VD, self).__init__()
         self.token_dim = token_dim
         self.num_tokens = num_tokens
@@ -35,12 +36,18 @@ class SOHO_Pre_VD(nn.Module):
         self.eps = eps
         self.curr_decay=self.decay
         self.max_decay=max_decay
-
+        self.step=0
 
     def set_decay_updates(self,num_update):
-        self.curr_decay=min(self.decay*num_update,self.max_decay)
+        # self.curr_decay=min(self.decay*num_update,self.max_decay)
+        num_update = math.ceil(num_update * 0.9)
+        self.curr_decay = max(self.max_decay / num_update * self.step, self.decay)
+        self.curr_decay = min(self.curr_decay, 1.0)
 
-    def forward(self,inputs_flatten):
+    def forward(self,inputs_flatten, num_update=None):
+        self.step += 1
+        self.set_decay_updates(num_update)
+        # print(self.curr_decay)
 
         distances = (torch.sum(inputs_flatten ** 2, dim=1, keepdim=True)
                      + torch.sum(self.embed.data ** 2, dim=1)
