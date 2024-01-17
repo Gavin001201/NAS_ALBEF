@@ -9,8 +9,8 @@ from functools import partial
 from models.vit import VisionTransformer, interpolate_pos_embed
 from models.xbert import BertConfig, BertForMaskedLM
 from models.sohonecks import SimpleVDforPreGate
-from models.sohobert import VLBertModel
-from models.soho_pre_head import MLM_MVM_ITM_head
+# from models.sohobert import VLBertModel
+# from models.soho_pre_head import MLM_MVM_ITM_head
 
 import torch
 import torch.nn.functional as F
@@ -40,14 +40,16 @@ class ALBEF(nn.Module):
             mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6))   
         
         if init_deit:
-            checkpoint = torch.hub.load_state_dict_from_url(
-                url="https://dl.fbaipublicfiles.com/deit/deit_base_patch16_224-b5f2ef4d.pth",
-                map_location="cpu", check_hash=True)
+            # checkpoint = torch.hub.load_state_dict_from_url(
+            #     url="https://dl.fbaipublicfiles.com/deit/deit_base_patch16_224-b5f2ef4d.pth",
+            #     map_location="cpu", check_hash=True)
+            local_checkpoint_path = "/mnt/workspace/Project/Project/ALBEF/checkpoints/deit_base_patch16_224-b5f2ef4d.pth"
+            checkpoint = torch.load(local_checkpoint_path, map_location="cpu")
             state_dict = checkpoint["model"]
             pos_embed_reshaped = interpolate_pos_embed(state_dict['pos_embed'], self.visual_encoder)
             state_dict['pos_embed'] = pos_embed_reshaped
             msg = self.visual_encoder.load_state_dict(state_dict,strict=False)
-            print(msg)          
+            print(msg)      
             
         vision_width = config['vision_width']       
         bert_config = BertConfig.from_json_file(config['bert_config'])
@@ -139,22 +141,22 @@ class ALBEF(nn.Module):
         ###=================================###
         # for the vision dictionary
         image_cls, image_embeds = image_embeds[:,0,:].unsqueeze(1), image_embeds[:,1:,:]     # [b,256,768]
-        text_cls = text_embeds[:,0,:].unsqueeze(1)
+        # text_cls = text_embeds[:,0,:].unsqueeze(1)
         # 计算每对匹配的图像文本序列中的patch-[cls]token相似度
-        text_similarity_matrix = torch.matmul(image_embeds, text_cls.transpose(1, 2)).squeeze(2)
-        image_similarity_matrix = torch.matmul(image_embeds, image_cls.transpose(1, 2)).squeeze(2)
+        # text_similarity_matrix = torch.matmul(image_embeds, text_cls.transpose(1, 2)).squeeze(2)
+        # image_similarity_matrix = torch.matmul(image_embeds, image_cls.transpose(1, 2)).squeeze(2)
 
-        similarity_matrix = F.normalize(image_similarity_matrix, dim=-1)+F.normalize(text_similarity_matrix, dim=-1)
-        topk_values, topk_indices = torch.topk(similarity_matrix, k=3, dim=1, largest=True)
-        topk_values = F.softmax(topk_values, dim=1)
-        tmp_indices = torch.multinomial(topk_values, 1) # 依概率从候选 topk_indices 进行选择的索引
-        mask_indices = torch.gather(topk_indices, 1, tmp_indices)   # 待替换 patch 的索引
+        # similarity_matrix = F.normalize(image_similarity_matrix, dim=-1)+F.normalize(text_similarity_matrix, dim=-1)
+        # topk_values, topk_indices = torch.topk(similarity_matrix, k=3, dim=1, largest=True)
+        # topk_values = F.softmax(topk_values, dim=1)
+        # tmp_indices = torch.multinomial(topk_values, 1) # 依概率从候选 topk_indices 进行选择的索引
+        # mask_indices = torch.gather(topk_indices, 1, tmp_indices)   # 待替换 patch 的索引
 
-        visual_tokens, neg_visual_tokens  = self.neck(image_embeds, mask_indices, num_update=num_training_steps)
+        visual_tokens, neg_visual_tokens  = self.neck(image_embeds, num_update=num_training_steps)
 
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
-        neg_image_tokens = torch.cat([image_cls,neg_visual_tokens],dim=1)
+        # neg_image_tokens = torch.cat([image_cls,neg_visual_tokens],dim=1)
 
         ###=================================###
         # forward the positve image-text pair
@@ -231,7 +233,7 @@ class ALBEF(nn.Module):
                                            return_dict = True,
                                            return_logits = True,   
                                           )   
-        if epoch<10: 
+        if epoch<30: 
             mlm_output = self.text_encoder(input_ids, 
                                         attention_mask = text.attention_mask,
                                         encoder_hidden_states = image_embeds,

@@ -45,10 +45,6 @@ class SOHO_Pre_VD(nn.Module):
         self.curr_decay = min(self.curr_decay, 1.0)
 
     def forward(self,inputs_flatten, num_update=None):
-        self.step += 1
-        self.set_decay_updates(num_update)
-        # print(self.curr_decay)
-
         distances = (torch.sum(inputs_flatten ** 2, dim=1, keepdim=True)
                      + torch.sum(self.embed.data ** 2, dim=1)
                      - 2 * torch.matmul(inputs_flatten, self.embed.data.t()))
@@ -57,20 +53,24 @@ class SOHO_Pre_VD(nn.Module):
                 encoding_indices: Tensor containing the discrete encoding indices, ie
                 which element of the quantized space each input element was mapped to.
         """
-        k = 4
-        topk_values, topk_indices = torch.topk(distances, k, largest=False)
-        topk_values = topk_values[:,1:]
-        topk_values = F.normalize(topk_values, dim=1)
-        # 将距离倒置当作概率分布
-        topk_values = 1.0 / (topk_values + 1e-4)
-        topk_values = F.softmax(topk_values, dim=1)
-        topk_indices = topk_indices[:,1:]
+        # k = 4
+        # topk_values, topk_indices = torch.topk(distances, k, largest=False)
+        # topk_values = topk_values[:,1:]
+        # topk_values = F.normalize(topk_values, dim=1)
+        # # 将距离倒置当作概率分布
+        # topk_values = 1.0 / (topk_values + 1e-4)
+        # topk_values = F.softmax(topk_values, dim=1)
+        # topk_indices = topk_indices[:,1:]
 
         encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
         encodings = torch.zeros(encoding_indices.shape[0],self.num_tokens, dtype=torch.float,device=inputs_flatten.device)
         encodings.scatter_(1, encoding_indices, 1)  # 将 encodings 中 encoding_indices 对应位置置为 1，相当于独热编码
 
         if self.training:
+            self.step += 1
+            self.set_decay_updates(num_update)
+            # print(self.curr_decay)
+
             # 统计码本中每条数据被选中的次数
             tmp_sum = torch.sum(encodings,dim=0,keepdim=True)
             encoding_sum = torch.sum(concat_all_gather(tmp_sum), dim=0)
@@ -95,7 +95,7 @@ class SOHO_Pre_VD(nn.Module):
         #quantize = inputs_flatten
         quantize = (quantize - inputs_flatten).detach() + inputs_flatten
 
-        return quantize, encoding_indices, topk_values, topk_indices
+        return quantize, encoding_indices
 
 
 @torch.no_grad()

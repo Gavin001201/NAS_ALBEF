@@ -1,7 +1,7 @@
 import json
 import os
 import random
-import numpy as np
+# import numpy as np
 
 from torch.utils.data import Dataset
 
@@ -88,11 +88,11 @@ class pretrain_dataset(Dataset):
         for f in ann_file:
             data = json.load(open(f,'r'))
 
-            n_samples = 80000
-            indices = np.linspace(0, len(data) - 1, n_samples, dtype=int)
-            data2 = [data[index] for index in indices]
+            # n_samples = 80000
+            # indices = np.linspace(0, len(data) - 1, n_samples, dtype=int)
+            # data2 = [data[index] for index in indices]
 
-            self.ann += data2
+            self.ann += data
         self.transform = transform
         self.max_words = max_words
         

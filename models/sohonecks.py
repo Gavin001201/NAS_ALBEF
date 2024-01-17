@@ -166,10 +166,10 @@ class SimpleVDforPreGate(nn.Module):
         self.total_num=0
         self.pos_align = pos_align
         self.begin_align = begin_align
-        # self.gate_fc = nn.Sequential(
-        #             nn.Linear(out_channels*2,2),
-        #             nn.LayerNorm(2),
-        #             nn.ReLU())
+        self.gate_fc = nn.Sequential(
+                    nn.Linear(out_channels*2,2),
+                    nn.LayerNorm(2),
+                    nn.ReLU())
 
         if begin_align:
             self.begin_line = nn.Linear(out_channels,out_channels)
@@ -177,7 +177,7 @@ class SimpleVDforPreGate(nn.Module):
         if pos_align:
             self.pos_line = nn.Linear(out_channels,out_channels)
 
-        # self.init_weights()
+        self.init_weights()
         
     # def init_weights(self):
     #     for m in self.modules():
@@ -233,7 +233,7 @@ class SimpleVDforPreGate(nn.Module):
         pos = pos.reshape(pos.shape[0], -1, pos.shape[3])
         return pos
 
-    def forward(self, img, mask_indices, num_update=None, img_meta=None):
+    def forward(self, img, mask_indices=None, num_update=None):
         xq = self.linear(img)
         xq_img = xq
         # xq_img2 = xq.clone().detach()
@@ -246,20 +246,20 @@ class SimpleVDforPreGate(nn.Module):
         if self.begin_align:
             inputs_flatten=self.begin_line(inputs_flatten)
 
-        quantized_pt, indices, topk_values, topk_indices = self.vq(inputs_flatten, num_update)
+        quantized_pt, indices = self.vq(inputs_flatten, num_update)
         if self.pos_align:  # 过线性层
             quantized_pt = self.pos_line(quantized_pt)
 
         embedded_pt = quantized_pt.view(b, l, quantized_pt.size(-1))
 
-        # tmp_feature = torch.cat([embedded_pt,xq_img],dim=2)     # 量化前后的数据在通道方向拼接在一起
+        tmp_feature = torch.cat([embedded_pt,xq_img],dim=2)     # 量化前后的数据在通道方向拼接在一起
 
-        # tmp_s = self.gate_fc(tmp_feature)   # 通道数降为2，卷积
-        # tmp_score = F.softmax(tmp_s,dim=2)
-        # emb_score = tmp_score[:,:,0].unsqueeze(dim=2)         # 对应量化结果的得分
-        # img_score = tmp_score[:,:,1].unsqueeze(dim=2)         # 对应未量化结果的得分，前面拼接这里解开
+        tmp_s = self.gate_fc(tmp_feature)   # 通道数降为2，卷积
+        tmp_score = F.softmax(tmp_s,dim=2)
+        emb_score = tmp_score[:,:,0].unsqueeze(dim=2)         # 对应量化结果的得分
+        img_score = tmp_score[:,:,1].unsqueeze(dim=2)         # 对应未量化结果的得分，前面拼接这里解开
 
-        # embedded_pt = embedded_pt*emb_score+xq_img*img_score    # 量化结果实际是量化前后结果的加权
+        embedded_pt = embedded_pt*emb_score+xq_img*img_score    # 量化结果实际是量化前后结果的加权
 
         # visual_mask = self.get_vis_mask(batch_size, img.device).float()
         # visual_mask = F.interpolate(visual_mask, size=xq.shape[-2:]).to(dtype=torch.bool)
@@ -270,25 +270,28 @@ class SimpleVDforPreGate(nn.Module):
         indices = indices.view(batch_size, l, -1).float()
         indices = indices * visual_mask - 100 * (1 - visual_mask)   # 这里其实没变，这一步可以删掉
 
-        # for itm
-        masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)   # 获取相似度最大图像patch即掩码位置对应的量化后索引
-        masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2) # 获取掩码矩阵
-        neg_indices = torch.multinomial(topk_values, 1) # 全局候选indices的索引
-        neg_indices = torch.gather(topk_indices, 1, neg_indices).reshape(batch_size, l, 1)  # 全局候选indices
-        neg_indices = torch.gather(neg_indices.squeeze(2), 1, mask_indices).unsqueeze(2)    # 目标候选indices
-        neg_indices = neg_indices * masked_neg_indices + indices * (1 - masked_neg_indices)
-        neg_indices = neg_indices.reshape(batch_size * l, -1).long()
-        encodings = torch.zeros(neg_indices.shape[0], self.vq.num_tokens, dtype=torch.float,device=neg_indices.device)
-        encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
-        neg_quantize = torch.matmul(encodings, self.vq.embed)
-        neg_quantize = neg_quantize.reshape(batch_size, l, -1)
-        # neg_quantize = neg_quantize*emb_score+xq_img2*img_score    # 量化结果实际是量化前后结果的加权
-
         embedded_pt += pos
-        # neg_quantize += pos
-
         xq = self.ln(embedded_pt).contiguous()   # layernorm
-        # neg_quantize = self.ln(neg_quantize).contiguous()
+
+        # for itm
+        if not mask_indices == None:
+            masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)   # 获取相似度最大图像patch即掩码位置对应的量化后索引
+            masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2) # 获取掩码矩阵
+            neg_indices = torch.multinomial(topk_values, 1) # 全局候选indices的索引
+            neg_indices = torch.gather(topk_indices, 1, neg_indices).reshape(batch_size, l, 1)  # 全局候选indices
+            neg_indices = torch.gather(neg_indices.squeeze(2), 1, mask_indices).unsqueeze(2)    # 目标候选indices
+            neg_indices = neg_indices * masked_neg_indices + indices * (1 - masked_neg_indices)
+            neg_indices = neg_indices.reshape(batch_size * l, -1).long()
+            encodings = torch.zeros(neg_indices.shape[0], self.vq.num_tokens, dtype=torch.float,device=neg_indices.device)
+            encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
+            neg_quantize = torch.matmul(encodings, self.vq.embed)
+            neg_quantize = neg_quantize.reshape(batch_size, l, -1)
+            # neg_quantize = neg_quantize*emb_score+xq_img2*img_score    # 量化结果实际是量化前后结果的加权
+            # neg_quantize += pos
+            # neg_quantize = self.ln(neg_quantize).contiguous()
+        else:
+            neg_quantize = None
+
 
         # visual_mask = visual_mask.view(batch_size, -1).long()
 
