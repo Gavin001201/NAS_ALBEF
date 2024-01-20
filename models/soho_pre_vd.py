@@ -53,49 +53,49 @@ class SOHO_Pre_VD(nn.Module):
                 encoding_indices: Tensor containing the discrete encoding indices, ie
                 which element of the quantized space each input element was mapped to.
         """
-        # k = 4
-        # topk_values, topk_indices = torch.topk(distances, k, largest=False)
-        # topk_values = topk_values[:,1:]
-        # topk_values = F.normalize(topk_values, dim=1)
-        # # 将距离倒置当作概率分布
-        # topk_values = 1.0 / (topk_values + 1e-4)
-        # topk_values = F.softmax(topk_values, dim=1)
-        # topk_indices = topk_indices[:,1:]
+        k = 4
+        topk_values, topk_indices = torch.topk(distances, k, largest=False)
+        topk_values = topk_values[:,1:]
+        topk_values = F.normalize(topk_values, dim=1)
+        # 将距离倒置当作概率分布
+        topk_values = 1.0 / (topk_values + 1e-4)
+        topk_values = F.softmax(topk_values, dim=1)
+        topk_indices = topk_indices[:,1:]
 
         encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
         encodings = torch.zeros(encoding_indices.shape[0],self.num_tokens, dtype=torch.float,device=inputs_flatten.device)
         encodings.scatter_(1, encoding_indices, 1)  # 将 encodings 中 encoding_indices 对应位置置为 1，相当于独热编码
 
-        if self.training:
-            self.step += 1
-            self.set_decay_updates(num_update)
-            # print(self.curr_decay)
+        # if self.training:
+        #     self.step += 1
+        #     self.set_decay_updates(num_update)
+        #     # print(self.curr_decay)
 
-            # 统计码本中每条数据被选中的次数
-            tmp_sum = torch.sum(encodings,dim=0,keepdim=True)
-            encoding_sum = torch.sum(concat_all_gather(tmp_sum), dim=0)
+        #     # 统计码本中每条数据被选中的次数
+        #     tmp_sum = torch.sum(encodings,dim=0,keepdim=True)
+        #     encoding_sum = torch.sum(concat_all_gather(tmp_sum), dim=0)
 
-            sum_inplace(self.cluster_sum,encoding_sum)  # 加和，这里的self.cluster_sum不进行加权
-            ema_tensor_inplace(self.cluster_size, encoding_sum, self.curr_decay)    # 对码本数量进行动量更新，这里self.cluster_size保留了所有数据
-            embed_sum_tmp = torch.matmul(encodings.t(), inputs_flatten) # 选中输入数据对应码本数据再对应输入数据的值,对应同一码本的向量相加
+        #     sum_inplace(self.cluster_sum,encoding_sum)  # 加和，这里的self.cluster_sum不进行加权
+        #     ema_tensor_inplace(self.cluster_size, encoding_sum, self.curr_decay)    # 对码本数量进行动量更新，这里self.cluster_size保留了所有数据
+        #     embed_sum_tmp = torch.matmul(encodings.t(), inputs_flatten) # 选中输入数据对应码本数据再对应输入数据的值,对应同一码本的向量相加
 
-            embed_sum = torch.sum(concat_all_gather(embed_sum_tmp.unsqueeze(dim=0)),dim=0)
-            ema_tensor_inplace(self.embed_avg, embed_sum, self.curr_decay)  # 对码本条目进行动量更新，这里self.embed_avg保留了所有数据
-            # 平滑处理后，每个位置都有了值，原来为0的位置也有了较小值
-            cluster_size = laplace_smoothing(self.cluster_size, self.num_tokens, self.eps) * self.cluster_size.sum()
-            embed_normalized = self.embed_avg / cluster_size.unsqueeze(1)
+        #     embed_sum = torch.sum(concat_all_gather(embed_sum_tmp.unsqueeze(dim=0)),dim=0)
+        #     ema_tensor_inplace(self.embed_avg, embed_sum, self.curr_decay)  # 对码本条目进行动量更新，这里self.embed_avg保留了所有数据
+        #     # 平滑处理后，每个位置都有了值，原来为0的位置也有了较小值
+        #     cluster_size = laplace_smoothing(self.cluster_size, self.num_tokens, self.eps) * self.cluster_size.sum()
+        #     embed_normalized = self.embed_avg / cluster_size.unsqueeze(1)
 
-            if dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1:
-                world_size = dist.get_world_size()
-                dist.all_reduce(embed_normalized.div_(world_size))
-            self.embed.data.copy_(embed_normalized)
+        #     if dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1:
+        #         world_size = dist.get_world_size()
+        #         dist.all_reduce(embed_normalized.div_(world_size))
+        #     self.embed.data.copy_(embed_normalized)
 
 
         quantize = torch.matmul(encodings, self.embed)
         #quantize = inputs_flatten
         quantize = (quantize - inputs_flatten).detach() + inputs_flatten
 
-        return quantize, encoding_indices
+        return quantize, encoding_indices, topk_values, topk_indices
 
 
 @torch.no_grad()

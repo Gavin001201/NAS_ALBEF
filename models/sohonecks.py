@@ -246,7 +246,7 @@ class SimpleVDforPreGate(nn.Module):
         if self.begin_align:
             inputs_flatten=self.begin_line(inputs_flatten)
 
-        quantized_pt, indices = self.vq(inputs_flatten, num_update)
+        quantized_pt, indices, topk_values, topk_indices = self.vq(inputs_flatten, num_update)
         if self.pos_align:  # 过线性层
             quantized_pt = self.pos_line(quantized_pt)
 
@@ -270,8 +270,8 @@ class SimpleVDforPreGate(nn.Module):
         indices = indices.view(batch_size, l, -1).float()
         indices = indices * visual_mask - 100 * (1 - visual_mask)   # 这里其实没变，这一步可以删掉
 
-        embedded_pt += pos
-        xq = self.ln(embedded_pt).contiguous()   # layernorm
+        embedded_pt2 = embedded_pt + pos
+        xq = self.ln(embedded_pt2).contiguous()   # layernorm
 
         # for itm
         if not mask_indices == None:
@@ -286,9 +286,10 @@ class SimpleVDforPreGate(nn.Module):
             encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
             neg_quantize = torch.matmul(encodings, self.vq.embed)
             neg_quantize = neg_quantize.reshape(batch_size, l, -1)
+            neg_quantize = neg_quantize * masked_neg_indices + embedded_pt * (1 - masked_neg_indices)
             # neg_quantize = neg_quantize*emb_score+xq_img2*img_score    # 量化结果实际是量化前后结果的加权
-            # neg_quantize += pos
-            # neg_quantize = self.ln(neg_quantize).contiguous()
+            neg_quantize += pos
+            neg_quantize = self.ln(neg_quantize).contiguous()
         else:
             neg_quantize = None
 
