@@ -18,7 +18,7 @@ class re_train_dataset(Dataset):
         self.ann = []
         for f in ann_file:
             self.ann += json.load(open(f,'r'))
-        self.ann = self.ann[:100]
+        # self.ann = self.ann[:100]
         self.transform = transform
         self.image_root = image_root
         self.max_words = max_words
@@ -51,7 +51,7 @@ class re_train_dataset(Dataset):
 class re_eval_dataset(Dataset):
     def __init__(self, ann_file, transform, image_root, max_words=30):        
         self.ann = json.load(open(ann_file,'r'))
-        self.ann = self.ann[:100]
+        # self.ann = self.ann[:100]
         self.transform = transform
         self.image_root = image_root
         self.max_words = max_words 
