@@ -6,8 +6,8 @@ image_root: '/mnt/workspace/Project/Project/ALBEF/data/coco'
 bert_config: '/mnt/workspace/Project/Project/ALBEF/configs/config_bert.json'
 
 image_res: 384
-batch_size_train: 1
-batch_size_test: 32
+batch_size_train: 32
+batch_size_test: 64
 
 queue_size: 65536
 momentum: 0.995
