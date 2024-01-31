@@ -110,7 +110,7 @@ class ALBEF(nn.Module):
 
         loss_ita = (loss_i2t+loss_t2i)/2
 
-        # self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
+        self._dequeue_and_enqueue(image_feat_m, text_feat_m, idx)
 
         ###=================================###
         # for the vision dictionary
