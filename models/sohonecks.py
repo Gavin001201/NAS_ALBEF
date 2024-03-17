@@ -285,6 +285,7 @@ class SimpleVDforPreGate(nn.Module):
             encodings = torch.zeros(neg_indices.shape[0], self.vq.num_tokens, dtype=torch.float,device=neg_indices.device)
             encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
             neg_quantize = torch.matmul(encodings, self.vq.embed)
+            neg_quantize = (neg_quantize - inputs_flatten).detach() + inputs_flatten
             neg_quantize = neg_quantize.reshape(batch_size, l, -1)
             neg_quantize = neg_quantize * masked_neg_indices + embedded_pt * (1 - masked_neg_indices)
             # neg_quantize = neg_quantize*emb_score+xq_img2*img_score    # 量化结果实际是量化前后结果的加权

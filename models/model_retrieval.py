@@ -130,7 +130,7 @@ class ALBEF(nn.Module):
 
         image_embeds = torch.cat([image_cls,image_embeds],dim=1)
         image_tokens = torch.cat([image_cls,visual_tokens],dim=1)   # 量化后的特征
-        neg_image_tokens = torch.cat([image_cls,neg_visual_tokens],dim=1).detach()
+        neg_image_tokens = torch.cat([image_cls,neg_visual_tokens],dim=1)
 
         ###=================================###
         # forward the positve image-text pair
@@ -167,10 +167,10 @@ class ALBEF(nn.Module):
         text_embeds_neg = torch.stack(text_embeds_neg,dim=0)   
         text_atts_neg = torch.stack(text_atts_neg,dim=0)      
 
-        text_embeds_all = torch.cat([text_embeds.detach(), text_embeds, text_embeds_neg],dim=0)     
+        text_embeds_all = torch.cat([text_embeds, text_embeds, text_embeds_neg],dim=0)     
         text_atts_all = torch.cat([text.attention_mask, text.attention_mask, text_atts_neg],dim=0)     
 
-        image_embeds_all = torch.cat([neg_image_tokens.detach(),image_embeds_neg,image_tokens],dim=0)
+        image_embeds_all = torch.cat([neg_image_tokens,image_embeds_neg,image_tokens],dim=0)
         image_atts_all = torch.cat([image_atts,image_atts,image_atts],dim=0)
 
         output_neg = self.text_encoder(encoder_embeds = text_embeds_all, 
