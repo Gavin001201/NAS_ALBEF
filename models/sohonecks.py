@@ -273,7 +273,7 @@ class SimpleVDforPreGate(nn.Module):
         embedded_pt2 = embedded_pt + pos
         xq = self.ln(embedded_pt2).contiguous()   # layernorm
 
-        # for itm
+# for itm
         if not mask_indices == None:
             masked_labels = torch.gather(indices.squeeze(2), 1, mask_indices)   # 获取相似度最大图像patch即掩码位置对应的量化后索引
             masked_neg_indices = (indices.squeeze(2) == masked_labels).float().unsqueeze(2) # 获取掩码矩阵
@@ -286,6 +286,7 @@ class SimpleVDforPreGate(nn.Module):
             encodings.scatter_(1, neg_indices, 1)  # 将 encodings 中 neg_indices 对应位置置为 1，相当于独热编码
             neg_quantize = torch.matmul(encodings, self.vq.embed)
             neg_quantize = (neg_quantize - inputs_flatten).detach() + inputs_flatten
+            neg_quantize = self.pos_line(neg_quantize)
             neg_quantize = neg_quantize.reshape(batch_size, l, -1)
             neg_quantize = neg_quantize * masked_neg_indices + embedded_pt * (1 - masked_neg_indices)
             # neg_quantize = neg_quantize*emb_score+xq_img2*img_score    # 量化结果实际是量化前后结果的加权
